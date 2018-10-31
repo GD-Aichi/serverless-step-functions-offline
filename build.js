@@ -123,38 +123,9 @@ module.exports = {
             delete this.eventParallelResult;
             return;
         case 'Choice':
-            //push all choices. but need to store information like
-            // 1) on which variable need to look: ${variable}
-            // 2) find operator: ${condition}
-            // 3) find function which will check data: ${checkFunction}
-            // 4) value which we will use in order to compare data: ${compareWithValue}
-            // 5) find target function - will be used if condition true: ${f}
-            const choiceConditional = {choice: []};
-            _.forEach(currentState.Choices, (choice) => {
-                const variable = choice.Variable.split('$.')[1];
-                const condition = _.pick(choice, enumList.supportedComparisonOperator);
-                if (!condition) {
-                    this.cliLog(`Sorry! At this moment we don't support operator '${operator}'`);
-                    process.exit(1);
-                }
-                const operator = Object.keys(condition)[0];
-                const checkFunction = enumList.convertOperator[operator];
-                const compareWithValue = condition[operator];
-
-                const choiceObj = {
-                    variable,
-                    condition,
-                    checkFunction,
-                    compareWithValue
-                };
-                choiceObj.choiceFunction = choice.Next;
-                choiceConditional.choice.push(choiceObj);
-            });
-            // if exists default function - store it
-            if (currentState.Default) {
-                choiceConditional.defaultFunction = currentState.Default;
-            }
-            return choiceConditional;
+            return {
+                choice: true,
+            };
         case 'Wait':
             // Wait State
             // works with parameter: seconds, timestamp, timestampPath, secondsPath;
@@ -215,25 +186,132 @@ module.exports = {
         }
     },
 
-    _runChoice(data, result) {
-        let existsAnyMatches = false;
-
-        //look through choice and find appropriate
-        _.forEach(data.choice, choice => {
-            //check if result from previous function has of value which described in Choice
-            if (!_.isNil(result[choice.variable])) {
-                //check condition
-                const isConditionTrue = choice.checkFunction(result[choice.variable], choice.compareWithValue);
-                if (isConditionTrue) {
-                    existsAnyMatches = true;
-                    return this.process(this.states[choice.choiceFunction], choice.choiceFunction, result);
-                }
+    _runChoice(state, result) {
+        for (const i in state.Choices) {
+            const nextState = this._processChoice(state.Choices[i], result);
+            if (nextState) {
+                return this.process(this.states[nextState], nextState, result);
             }
-        });
-        if (!existsAnyMatches && data.defaultFunction) {
-            const fName = data.defaultFunction;
+        }
+
+        if (state.Default || state.End) {
+            const fName = state.Default || state.End;
             return this.process(this.states[fName], fName, result);
         }
+    },
+    
+    _processChoice(choice, event) {
+        const variableKey = choice.Variable && choice.Variable.split('$.')[1];
+        const variable = variableKey && event[variableKey];
+
+        const condition = _.pick(choice, enumList.supportedComparisonOperator);
+        if (!condition) {
+            this.cliLog(`Sorry! At this moment we don't support operator '${operator}'`);
+            process.exit(1);
+        }
+        const next = choice.Next || true;
+        for (const key in choice) {
+            switch (key) {
+                case 'And':
+                    if (choice.And.every(ch => this._processChoice(ch, event))) {
+                        return next;
+                    }
+                    break;
+                case 'BooleanEquals':
+                    if (variable === choice.BooleanEquals) {
+                        return next;
+                    }
+                    break;
+                case 'Not':
+                    if (!this._processChoice(choice.Not, event)) {
+                        return next;
+                    }
+                    break;
+                case 'NumericEquals':
+                    if (variable === choice.NumericEquals) {
+                        return next;
+                    }
+                    break;
+                case 'NumericGreaterThan':
+                    if (variable > choice.NumericGreaterThan) {
+                        return next;
+                    }
+                    break;
+                case 'NumericGreaterThanEquals':
+                    if (variable >= choice.NumericGreaterThanEquals) {
+                        return next;
+                    }
+                    break;
+                case 'NumericLessThan':
+                    if (variable < choice.NumericLessThan) {
+                        return next;
+                    }
+                    break;
+                case 'NumericLessThanEquals':
+                    if (variable <= choice.NumericLessThanEquals) {
+                        return next;
+                    }
+                    break;
+                case 'Or':
+                    if (choice.Or.some(ch => this._processChoice(ch, event))) {
+                        return next;
+                    }
+                    break;
+                case 'StringEquals':
+                    if (variable === choice.StringEquals) {
+                        return next;
+                    }
+                    break;
+                case 'StringGreaterThan':
+                    if (variable > choice.StringGreaterThan) {
+                        return next;
+                    }
+                    break;
+                case 'StringGreaterThanEquals':
+                    if (variable >= choice.StringGreaterThanEquals) {
+                        return next;
+                    }
+                    break;
+                case 'StringLessThan':
+                    if (variable < choice.StringLessThan) {
+                        return next;
+                    }
+                    break;
+                case 'StringLessThanEquals':
+                    if (variable <= choice.StringLessThanEquals) {
+                        return next;
+                    }
+                    break;
+                case 'TimestampEquals':
+                    if (variable === choice.TimestampEquals) {
+                        return next;
+                    }
+                    break;
+                case 'TimestampGreaterThan':
+                    if (variable > choice.TimestampGreaterThan) {
+                        return next;
+                    }
+                    break;
+                case 'TimestampGreaterThanEquals':
+                    if (variable >= choice.TimestampGreaterThanEquals) {
+                        return next;
+                    }
+                    break;
+                case 'TimestampLessThan':
+                    if (variable < choice.TimestampLessThan) {
+                        return next;
+                    }
+                    break;
+                case 'TimestampLessThanEquals':
+                    if (variable <= choice.TimestampLessThanEquals) {
+                        return next;
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+        return null;
     },
 
     _waitState(event, currentState, currentStateName) {
